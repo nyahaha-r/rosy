@@ -22,18 +22,21 @@ main{flex:1;min-height:0;display:flex;flex-direction:column;padding:5px 9px}
 .day-bottom{display:flex;align-items:center;justify-content:space-between;gap:5px;margin-top:2px}.costume{min-width:0;flex:1;font-size:11.5px;line-height:1.35;color:#665a70;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.day-price{flex:none;text-align:right;font-size:13px;font-weight:700;color:#9a356a;font-variant-numeric:tabular-nums}
 .event{gap:5px}.event .name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;font-weight:600}.event .start{flex:0 0 36px;text-align:right;color:#765f70;font-size:11px;font-variant-numeric:tabular-nums}
 .event .start.different-time{color:#d00029;font-weight:900;background:#fff0ee;border-radius:4px;padding:2px 1px;text-align:center}
-.event input{flex:0 0 48px;width:48px;height:24px;padding:1px 4px;border:1px solid #cfc4ce;border-radius:5px;background:#fff;text-align:right;font-size:12px;font-variant-numeric:tabular-nums}.event input::-webkit-inner-spin-button{opacity:.35}.event.has-value{box-shadow:inset 3px 0 #994071}.blank{justify-content:center;background:#fbfafb;color:#ccc}
+.event input,.export-qty{flex:0 0 48px;width:48px;height:24px;padding:1px 4px;border:1px solid #cfc4ce;border-radius:5px;background:#fff;text-align:right;font-size:12px;font-variant-numeric:tabular-nums;color:var(--ink)}.export-qty{display:flex;align-items:center;justify-content:flex-end}.event input::-webkit-inner-spin-button{opacity:.35}.event.has-value{box-shadow:inset 3px 0 #994071}.blank{justify-content:center;background:#fbfafb;color:#ccc}
 .type-photo{background:#fce8f0}.type-talk{background:#e7f3ff}.type-group{background:#e6f5f2}.type-sign{background:#fff2d8}.type-draw{background:#f0eaff}.type-game{background:#eaf4df}.type-sport{background:#ffe9d9}
+.export-surface{position:absolute;top:0;left:0;z-index:-1;pointer-events:none;background:#fff;padding:0;margin:0}
+.export-surface .grid{height:auto;min-height:0;grid-template-rows:69px repeat(14,40px)}
+.export-surface .head,.export-surface .time{position:static}
 @media(max-width:800px){.top{gap:7px}.top h1{font-size:14px}}
 </style>
 </head>
 <body>
-<div class="top">
+<div class="top" id="topbar">
  <h1>ロージークロニクル 4thシングル個別イベントプランナー</h1>
  <a href="https://helloproject.com/event/282f99b7376c9a85cef549dc3f60967f27c161d41cac9c7078923659b75556fa/" target="_blank" rel="noopener noreferrer">公式情報 ↗</a>
  <span class="summary">合計 <strong id="allCount">0</strong> 枚</span>
  <span class="summary">合計金額 <strong id="allPrice">¥0</strong></span><span class="shipping-note">＊送料別</span>
- <span class="space"></span><button id="csv" type="button">CSV保存</button><button id="capture" type="button" title="表示中の画面をPNGで保存">画面キャプチャ保存</button><button id="reset" type="button">リセット</button>
+ <span class="space"></span><button id="csv" type="button">CSV保存</button><button id="capture" type="button" title="このページの表全体をPNGで保存">画像保存</button><button id="reset" type="button">リセット</button>
 </div>
 <main><div class="viewport" role="region" aria-label="イベント日程一覧" tabindex="0"><div class="grid" id="grid"></div></div></main>
 <script>
@@ -105,28 +108,41 @@ document.getElementById('csv').addEventListener('click',()=>{
  for(const day of days)for(let i=0;i<times.length;i++){const ev=getEvent(day,i);if(!ev)continue;const input=document.getElementById(`q-${day.id}-${i}`),n=valid(input.value,Number(input.max)),price=unitPrice(ev);rows.push([day.date,day.venue,day.costume,ev.name,ev.time,n,price,n*price])}
  const quote=value=>'"'+String(value).replaceAll('"','""')+'"';const csv='\ufeff'+rows.map(row=>row.map(quote).join(',')).join('\r\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='rosy_2026_tickets.csv';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
 });
+let libraryLoading;
+function loadRenderer(){
+ if(window.html2canvas)return Promise.resolve();
+ if(!libraryLoading)libraryLoading=new Promise((resolve,reject)=>{
+  const script=document.createElement('script');script.src='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+  script.onload=()=>window.html2canvas?resolve():reject(new Error('ライブラリの読み込みに失敗しました'));
+  script.onerror=()=>reject(new Error('画像化ライブラリを取得できませんでした。インターネット接続を確認してください'));
+  document.head.append(script);
+ }).catch(error=>{libraryLoading=null;throw error});
+ return libraryLoading;
+}
 const captureButton=document.getElementById('capture');
 captureButton.addEventListener('click',async()=>{
- if(!navigator.mediaDevices?.getDisplayMedia){alert('このブラウザーは画面キャプチャに対応していません。ChromeやEdgeで開いてください。');return}
- let stream;
+ let surface;
  try{
   captureButton.disabled=true;
-  stream=await navigator.mediaDevices.getDisplayMedia({video:true,audio:false,preferCurrentTab:true});
-  const track=stream.getVideoTracks()[0];
-  if(track.getSettings().displaySurface && track.getSettings().displaySurface!=='browser'){
-   alert('このページを開いているブラウザーのタブを選択してください。画面全体や別のウィンドウは保存しません。');return;
-  }
-  const video=document.createElement('video');video.muted=true;video.playsInline=true;video.srcObject=stream;
-  await video.play();
-  if(!video.videoWidth||!video.videoHeight)await new Promise(resolve=>video.addEventListener('loadedmetadata',resolve,{once:true}));
-  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
-  if(!video.videoWidth||!video.videoHeight)throw new Error('キャプチャ画像を取得できませんでした');
-  const canvas=document.createElement('canvas');canvas.width=video.videoWidth;canvas.height=video.videoHeight;
-  canvas.getContext('2d').drawImage(video,0,0);
+  await loadRenderer();
+  const width=Math.max(grid.scrollWidth,1250);
+  surface=document.createElement('div');surface.className='export-surface';surface.style.width=width+'px';
+  const title=document.getElementById('topbar').cloneNode(true);
+  title.removeAttribute('id');title.querySelectorAll('button').forEach(el=>el.remove());
+  title.querySelectorAll('[id]').forEach(el=>el.removeAttribute('id'));
+  const table=grid.cloneNode(true);table.removeAttribute('id');table.style.width=width+'px';
+  table.querySelectorAll('[id]').forEach(el=>el.removeAttribute('id'));
+  table.querySelectorAll('input').forEach(input=>{
+   const box=document.createElement('span');box.className='export-qty';box.textContent=String(valid(input.value,Number(input.max)));
+   input.replaceWith(box);
+  });
+  surface.append(title,table);document.body.append(surface);
+  const height=surface.scrollHeight;
+  const canvas=await html2canvas(surface,{backgroundColor:'#ffffff',scale:Math.min(2,window.devicePixelRatio||1),width,height,windowWidth:width,windowHeight:height,scrollX:0,scrollY:0,logging:false});
   const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));
   if(!blob)throw new Error('PNG画像を作成できませんでした');
-  const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='rosy_2026_screen.png';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
- }catch(error){if(error.name!=='NotAllowedError')alert('画面キャプチャを保存できませんでした。ブラウザーの共有画面で「このタブ」を選んで再試行してください。')}finally{stream?.getTracks().forEach(track=>track.stop());captureButton.disabled=false}
+  const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='rosy_2026_full_plan.png';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+ }catch(error){alert('画像保存に失敗しました：'+error.message)}finally{surface?.remove();captureButton.disabled=false}
 });
 refresh();
 </script>
