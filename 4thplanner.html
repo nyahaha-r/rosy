@@ -10,7 +10,7 @@ body{display:flex;flex-direction:column;background:#fbf9fb;color:var(--ink);font
 button,input{font:inherit}button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid #7652da;outline-offset:1px}
 .top{display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-height:43px;padding:5px 12px;background:#85366d;color:white}
 .top h1{margin:0;font-size:16px;white-space:nowrap}.top a{font-size:11px;color:#fff;text-decoration:underline;white-space:nowrap}.summary{font-size:12px;white-space:nowrap}.summary strong{font-size:17px;font-variant-numeric:tabular-nums}.shipping-note{font-size:11px;white-space:nowrap}.space{flex:1}
-.top button{padding:5px 9px;border:1px solid #ffffff80;border-radius:6px;background:#ffffff18;color:white;cursor:pointer;font-size:11px}.top button:hover{background:#ffffff38}
+.top button{padding:5px 9px;border:1px solid #ffffff80;border-radius:6px;background:#ffffff18;color:white;cursor:pointer;font-size:11px}.top button:hover{background:#ffffff38}.top button:disabled{opacity:.6;cursor:wait}
 main{flex:1;min-height:0;display:flex;flex-direction:column;padding:5px 9px}
 .viewport{flex:1;min-height:0;overflow:auto;background:white;border:1px solid var(--line);border-radius:7px}
 .grid{display:grid;grid-template-columns:62px repeat(5,minmax(225px,1fr));grid-template-rows:69px repeat(14,minmax(32px,1fr));min-width:1250px;min-height:520px;height:100%}
@@ -33,7 +33,7 @@ main{flex:1;min-height:0;display:flex;flex-direction:column;padding:5px 9px}
  <a href="https://helloproject.com/event/282f99b7376c9a85cef549dc3f60967f27c161d41cac9c7078923659b75556fa/" target="_blank" rel="noopener noreferrer">公式情報 ↗</a>
  <span class="summary">合計 <strong id="allCount">0</strong> 枚</span>
  <span class="summary">合計金額 <strong id="allPrice">¥0</strong></span><span class="shipping-note">＊送料別</span>
- <span class="space"></span><button id="csv" type="button">CSV保存</button><button id="reset" type="button">リセット</button>
+ <span class="space"></span><button id="csv" type="button">CSV保存</button><button id="capture" type="button" title="表示中の画面をPNGで保存">画面キャプチャ保存</button><button id="reset" type="button">リセット</button>
 </div>
 <main><div class="viewport" role="region" aria-label="イベント日程一覧" tabindex="0"><div class="grid" id="grid"></div></div></main>
 <script>
@@ -104,6 +104,29 @@ document.getElementById('csv').addEventListener('click',()=>{
  const rows=[['日付','会場','衣装','イベント名','開始時刻','参加券枚数','商品単価（税込円）','商品代（税込円）']];
  for(const day of days)for(let i=0;i<times.length;i++){const ev=getEvent(day,i);if(!ev)continue;const input=document.getElementById(`q-${day.id}-${i}`),n=valid(input.value,Number(input.max)),price=unitPrice(ev);rows.push([day.date,day.venue,day.costume,ev.name,ev.time,n,price,n*price])}
  const quote=value=>'"'+String(value).replaceAll('"','""')+'"';const csv='\ufeff'+rows.map(row=>row.map(quote).join(',')).join('\r\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='rosy_2026_tickets.csv';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+});
+const captureButton=document.getElementById('capture');
+captureButton.addEventListener('click',async()=>{
+ if(!navigator.mediaDevices?.getDisplayMedia){alert('このブラウザーは画面キャプチャに対応していません。ChromeやEdgeで開いてください。');return}
+ let stream;
+ try{
+  captureButton.disabled=true;
+  stream=await navigator.mediaDevices.getDisplayMedia({video:true,audio:false,preferCurrentTab:true});
+  const track=stream.getVideoTracks()[0];
+  if(track.getSettings().displaySurface && track.getSettings().displaySurface!=='browser'){
+   alert('このページを開いているブラウザーのタブを選択してください。画面全体や別のウィンドウは保存しません。');return;
+  }
+  const video=document.createElement('video');video.muted=true;video.playsInline=true;video.srcObject=stream;
+  await video.play();
+  if(!video.videoWidth||!video.videoHeight)await new Promise(resolve=>video.addEventListener('loadedmetadata',resolve,{once:true}));
+  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+  if(!video.videoWidth||!video.videoHeight)throw new Error('キャプチャ画像を取得できませんでした');
+  const canvas=document.createElement('canvas');canvas.width=video.videoWidth;canvas.height=video.videoHeight;
+  canvas.getContext('2d').drawImage(video,0,0);
+  const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));
+  if(!blob)throw new Error('PNG画像を作成できませんでした');
+  const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='rosy_2026_screen.png';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+ }catch(error){if(error.name!=='NotAllowedError')alert('画面キャプチャを保存できませんでした。ブラウザーの共有画面で「このタブ」を選んで再試行してください。')}finally{stream?.getTracks().forEach(track=>track.stop());captureButton.disabled=false}
 });
 refresh();
 </script>
